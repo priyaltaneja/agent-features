@@ -1,4 +1,8 @@
-// Usage: KV_REST_API_URL=... KV_REST_API_TOKEN=... node seed.mjs
+// Usage: REDIS_URL=redis://... node seed.mjs
+
+import Redis from "ioredis";
+
+const redis = new Redis(process.env.REDIS_URL);
 
 const features = [
   { agent: "OpenCode", name: "Doom Loop Detection", desc: `Built-in detection for when the agent gets stuck repeating the same tool call with identical parameters in an infinite loop. When detected, OpenCode intercepts the loop and prompts the user with three options: approve once, always allow, or reject. It's configured as a first-class permission alongside bash, edit, and webfetch, defaulting to "ask". You can set it to "deny" to hard-block loops automatically, or "allow" to let the agent keep trying.` },
@@ -17,39 +21,18 @@ const features = [
   { agent: "Aider", name: "Undo Reply Feedback Loop", desc: `When you /undo a change, Aider's send_undo_reply setting controls whether the model is told that its previous edit was reverted and shown the diff that was undone. This turns the undo into a learning signal where the model sees "your change was rejected, here's what you did wrong" and can use that context for the next attempt.` },
 ];
 
-async function seed() {
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
+const featureObjs = features.map((f, i) => ({
+  id: i + 1,
+  agent_name: f.agent,
+  feature_name: f.name,
+  description: f.desc,
+  added_by: "priya",
+  created_at: new Date().toISOString(),
+}));
 
-  if (!url || !token) {
-    console.error("Set KV_REST_API_URL and KV_REST_API_TOKEN env vars");
-    process.exit(1);
-  }
+await redis.set("features", JSON.stringify(featureObjs));
+await redis.set("feature_id_counter", String(features.length));
+await redis.del("clusters");
 
-  // Use Upstash REST API directly to avoid import issues
-  async function redis(cmd) {
-    const res = await fetch(`${url}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(cmd),
-    });
-    return res.json();
-  }
-
-  const featureObjs = features.map((f, i) => ({
-    id: i + 1,
-    agent_name: f.agent,
-    feature_name: f.name,
-    description: f.desc,
-    added_by: "priya",
-    created_at: new Date().toISOString(),
-  }));
-
-  await redis(["SET", "features", JSON.stringify(featureObjs)]);
-  await redis(["SET", "feature_id_counter", String(features.length)]);
-  await redis(["DEL", "clusters"]);
-
-  console.log(`Seeded ${features.length} features.`);
-}
-
-seed();
+console.log(`Seeded ${features.length} features.`);
+await redis.quit();
